@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Карта улиц и домов ПМР v3.0</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Карта ПМР — Улицы и Дома v4.0</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -39,14 +42,13 @@
       background: rgba(255,255,255,0.6) !important;
       backdrop-filter: blur(4px);
     }
-    /* Стили для номеров домов на карте */
     .house-label {
       background: transparent !important;
       border: none !important;
       box-shadow: none !important;
-      color: #1e293b;
+      color: #0f172a;
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 800;
       text-shadow: 0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 4px #ffffff;
       padding: 0 !important;
       pointer-events: none;
@@ -164,21 +166,28 @@
         <span id="statusText" class="truncate">Загрузка карты...</span>
       </div>
 
-      <!-- Плашка уведомления + кнопка "Заметка" -->
-      <div id="toastContainer" class="hidden pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-lg flex items-center gap-2 max-w-[65%]">
+      <!-- Плашка уведомления + кнопка "Заметка / Подъезды" -->
+      <div id="toastContainer" class="hidden pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-lg flex items-center gap-2 max-w-[68%]">
         <span id="toastText" class="truncate"></span>
         <button id="editNoteBtn" onclick="openNoteEditorForLast()" class="hidden bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
-          ✏️ Заметка
+          ✏️ Детали
         </button>
       </div>
     </div>
   </div>
 
-  <!-- БОКОВЫЕ КНОПКИ ЗУМА И ГЕОЛОКАЦИИ -->
+  <!-- ЛЕВАЯ КНОПКА ОТМЕНЫ ПОСЛЕДНЕГО ДЕЙСТВИЯ (UNDO) -->
+  <div class="fixed left-2.5 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 pointer-events-auto">
+    <button id="undoBtn" onclick="undoLastAction()" title="Отменить последнее действие" class="hidden bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-base">
+      ↩️
+    </button>
+  </div>
+
+  <!-- ПРАВЫЕ БОКОВЫЕ КНОПКИ ЗУМА И ЖИВОЙ ГЕОЛОКАЦИИ -->
   <div class="fixed right-2.5 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 pointer-events-auto">
     <button onclick="map.zoomIn()" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-lg">+</button>
     <button onclick="map.zoomOut()" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-lg">−</button>
-    <button onclick="locateUser()" title="Где я" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-blue-600 active:scale-90 transition mt-1">
+    <button id="gpsBtn" onclick="toggleLiveGPS()" title="Живой GPS-трекер" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-blue-600 active:scale-90 transition mt-1">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06z"/></svg>
     </button>
   </div>
@@ -201,17 +210,20 @@
         <button onclick="setSelectionMode('pin_house')" id="mode_pin_house" class="mode-btn shrink-0 text-xs font-semibold px-2.5 py-1.5 rounded-xl border transition bg-slate-100 text-slate-700 border-slate-200">
           📌 Дом-точка
         </button>
+        <button onclick="setSelectionMode('draw_line')" id="mode_draw_line" class="mode-btn shrink-0 text-xs font-semibold px-2.5 py-1.5 rounded-xl border transition bg-slate-100 text-slate-700 border-slate-200">
+          ✏️ Своя линия
+        </button>
       </div>
 
       <!-- Ряд 2: Выбор цвета маркера -->
       <div class="flex items-center justify-between px-1">
-        <span class="text-xs font-medium text-slate-500">Цвет выделения:</span>
-        <div class="flex items-center gap-2.5">
-          <button onclick="setColor('#10b981', 'Зелёный')" data-color="#10b981" class="color-btn w-6 h-6 rounded-full bg-emerald-500 ring-2 ring-offset-2 ring-slate-800 transition transform scale-110"></button>
-          <button onclick="setColor('#ef4444', 'Красный')" data-color="#ef4444" class="color-btn w-6 h-6 rounded-full bg-red-500 transition"></button>
-          <button onclick="setColor('#3b82f6', 'Синий')" data-color="#3b82f6" class="color-btn w-6 h-6 rounded-full bg-blue-500 transition"></button>
-          <button onclick="setColor('#f59e0b', 'Жёлтый')" data-color="#f59e0b" class="color-btn w-6 h-6 rounded-full bg-amber-500 transition"></button>
-          <button onclick="setColor('#a855f7', 'Фиолетовый')" data-color="#a855f7" class="color-btn w-6 h-6 rounded-full bg-purple-500 transition"></button>
+        <span id="colorLegendLabel" class="text-xs font-medium text-slate-600 truncate mr-2">Цвет: Выполнено / Пройдено</span>
+        <div class="flex items-center gap-2.5 shrink-0">
+          <button onclick="setColor('#10b981', 'Выполнено / Пройдено')" data-color="#10b981" class="color-btn w-6 h-6 rounded-full bg-emerald-500 ring-2 ring-offset-2 ring-slate-800 transition transform scale-110"></button>
+          <button onclick="setColor('#ef4444', 'Закрыто / Отказ')" data-color="#ef4444" class="color-btn w-6 h-6 rounded-full bg-red-500 transition"></button>
+          <button onclick="setColor('#3b82f6', 'В работе / Инфо')" data-color="#3b82f6" class="color-btn w-6 h-6 rounded-full bg-blue-500 transition"></button>
+          <button onclick="setColor('#f59e0b', 'Вернуться позже')" data-color="#f59e0b" class="color-btn w-6 h-6 rounded-full bg-amber-500 transition"></button>
+          <button onclick="setColor('#a855f7', 'Особая отметка')" data-color="#a855f7" class="color-btn w-6 h-6 rounded-full bg-purple-500 transition"></button>
         </div>
       </div>
 
@@ -233,19 +245,45 @@
     </div>
   </div>
 
-  <!-- МОДАЛЬНОЕ ОКНО: ЗАМЕТКА / ПОДПИСЬ К ДОМУ ИЛИ УЧАСТКУ -->
+  <!-- МОДАЛЬНОЕ ОКНО: КАРТОЧКА ДОМА / ПОДЪЕЗДЫ / ЗАМЕТКА -->
   <div id="noteModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="font-bold text-slate-800 text-sm">✏️ Подпись / Заметка</h3>
+        <h3 class="font-bold text-slate-800 text-sm">🏠 Карточка объекта / Заметка</h3>
         <button onclick="toggleModal('noteModal', false)" class="text-slate-400 hover:text-slate-600">✕</button>
       </div>
-      <div class="space-y-2">
-        <label class="block text-xs text-slate-500">Название или № дома:</label>
-        <input id="noteNameInput" type="text" class="w-full bg-slate-100 text-sm px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text" />
-        <label class="block text-xs text-slate-500">Комментарий (необязательно):</label>
-        <input id="noteTextInput" type="text" placeholder="Например: пройдено, нет дома, собака..." class="w-full bg-slate-100 text-sm px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text" />
+
+      <div class="space-y-2.5">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 mb-1">Название улицы или № дома:</label>
+          <input id="noteNameInput" type="text" class="w-full bg-slate-100 text-sm px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text" />
+        </div>
+
+        <!-- Отметка подъездов (для многоквартирных домов) -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 mb-1">Отметить подъезды (если многоэтажка):</label>
+          <div id="entrancesContainer" class="grid grid-cols-8 gap-1">
+            <!-- Кнопки 1..8 генерируются JS -->
+          </div>
+        </div>
+
+        <!-- Быстрые теги -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 mb-1">Быстрые теги:</label>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="appendQuickTag('Пройдено')" class="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded-lg font-medium">+ Пройдено</button>
+            <button onclick="appendQuickTag('Домофон')" class="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-1 rounded-lg font-medium">+ Домофон</button>
+            <button onclick="appendQuickTag('Нет прохода')" class="text-[11px] bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded-lg font-medium">+ Нет прохода</button>
+            <button onclick="appendQuickTag('Вернуться')" class="text-[11px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg font-medium">+ Вернуться</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 mb-1">Комментарий / Заметка:</label>
+          <input id="noteTextInput" type="text" placeholder="Код домофона, этажи, детали..." class="w-full bg-slate-100 text-sm px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text" />
+        </div>
       </div>
+
       <div class="flex gap-2 pt-1">
         <button onclick="saveNoteForLast()" class="flex-1 bg-blue-600 text-white font-semibold text-xs py-2.5 rounded-xl active:scale-95 transition">Сохранить</button>
         <button onclick="toggleModal('noteModal', false)" class="bg-slate-100 text-slate-600 font-semibold text-xs px-4 py-2.5 rounded-xl">Отмена</button>
@@ -255,8 +293,8 @@
 
   <!-- МОДАЛЬНОЕ ОКНО: СПИСОК ВЫДЕЛЕННЫХ ОБЪЕКТОВ -->
   <div id="listModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[84vh] flex flex-col shadow-2xl overflow-hidden">
-      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+    <div class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-3.5 border-b border-slate-100 flex items-center justify-between">
         <div>
           <h3 class="font-bold text-slate-800 text-base">Выделенные улицы и дома</h3>
           <p class="text-xs text-slate-500">Нажмите на запись, чтобы показать на карте</p>
@@ -264,16 +302,21 @@
         <button onclick="toggleModal('listModal', false)" class="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">✕</button>
       </div>
 
+      <!-- Поиск внутри сохраненного списка -->
+      <div class="px-3.5 pt-2 bg-slate-50">
+        <input id="listFilterInput" type="text" oninput="renderStreetsListContent()" placeholder="🔍 Фильтр по улице, дому или заметке..." class="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text" />
+      </div>
+
       <!-- Фильтр по цветам -->
-      <div id="colorFilterBar" class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+      <div id="colorFilterBar" class="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
       </div>
       
-      <div id="selectedListContainer" class="p-4 overflow-y-auto custom-scroll flex-1 space-y-2">
+      <div id="selectedListContainer" class="p-3.5 overflow-y-auto custom-scroll flex-1 space-y-2">
       </div>
 
       <div class="p-3 bg-slate-50 border-t border-slate-100 flex justify-between gap-2">
         <button onclick="copyReadableList()" class="flex-1 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-xl active:scale-95 transition">
-          📋 Скопировать списком (текст)
+          📋 Скопировать отчёт (текст)
         </button>
         <button onclick="clearAllSelected()" class="bg-red-50 text-red-600 border border-red-200 text-xs font-semibold px-3 py-2.5 rounded-xl active:scale-95 transition">
           Очистить всё
@@ -288,15 +331,14 @@
       <div class="p-4 border-b border-slate-100 flex items-center justify-between">
         <div>
           <h3 class="font-bold text-slate-800 text-base">Сохранение, Экспорт и Импорт</h3>
-          <p class="text-xs text-slate-500">Перенос всех выделенных улиц, участков и домов</p>
+          <p class="text-xs text-slate-500">Синхронизация и резервное копирование базы</p>
         </div>
         <button onclick="toggleModal('dataModal', false)" class="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">✕</button>
       </div>
 
-      <div class="p-4 overflow-y-auto custom-scroll space-y-4 text-sm">
-        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
-          <div class="font-semibold text-slate-800">📤 Экспорт данных</div>
-          <p class="text-xs text-slate-500">Скачайте файл резервной копии или скопируйте код для отправки:</p>
+      <div class="p-4 overflow-y-auto custom-scroll space-y-3.5 text-sm">
+        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+          <div class="font-semibold text-slate-800 text-xs">📤 Экспорт ваших данных</div>
           <div class="grid grid-cols-2 gap-2">
             <button onclick="exportJSONFile()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2.5 px-3 rounded-xl active:scale-95 transition">
               💾 Скачать .JSON
@@ -307,16 +349,23 @@
           </div>
         </div>
 
+        <!-- Выбор режима импорта: Объединить или Заменить -->
         <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
-          <div class="font-semibold text-slate-800">📥 Импорт из файла</div>
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-slate-800 text-xs">📥 Режим при импорте:</span>
+            <select id="importModeSelect" class="bg-white border border-slate-300 text-xs font-semibold rounded-lg px-2 py-1">
+              <option value="merge">➕ Объединить с текущими</option>
+              <option value="replace">🔄 Заменить текущие</option>
+            </select>
+          </div>
           <input type="file" id="importFileInput" accept=".json,application/json,text/plain" onchange="importFromFile(event)" class="block w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
         </div>
 
         <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
-          <div class="font-semibold text-slate-800">🔄 Обмен через текстовый код</div>
-          <textarea id="jsonTextarea" rows="4" placeholder="Вставьте сюда скопированный код для импорта..." class="w-full p-2.5 text-xs font-mono bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text"></textarea>
+          <div class="font-semibold text-slate-800 text-xs">🔄 Код данных (ручной ввод)</div>
+          <textarea id="jsonTextarea" rows="3" placeholder="Вставьте сюда скопированный JSON-код..." class="w-full p-2.5 text-xs font-mono bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text"></textarea>
           <button onclick="importFromTextarea()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 rounded-xl active:scale-95 transition">
-            ✅ Импортировать из кода
+            ✅ Загрузить данные из кода
           </button>
         </div>
       </div>
@@ -342,28 +391,41 @@
     // ГЛОБАЛЬНОЕ СОСТОЯНИЕ И НАСТРОЙКИ
     // ==========================================
     const STORAGE_KEY = 'pmr_streets_tracker_v2';
-    const MICRO_SEGMENT_METERS = 30; // Мелкий участок улицы ~30 метров (1-2 частных двора)
+    const MICRO_SEGMENT_METERS = 30;
 
     let activeColor = '#10b981';
-    let selectionMode = 'micro'; // 'micro' | 'segment' | 'street' | 'pin_house'
+    let selectionMode = 'micro'; // 'micro' | 'segment' | 'street' | 'pin_house' | 'draw_line'
     let showBuildingsLayer = true;
     let isSatellite = false;
     let currentSettlementName = 'Тирасполь';
     let activeColorFilter = 'ALL';
     let lastInteractedIds = [];
+    let selectedEntrancesTemp = [];
+
+    // Для рисования собственной линии (проулка) 2 кликами
+    let drawStartLatLng = null;
+    let drawStartPreviewMarker = null;
+
+    // Стек отмены действий (Undo)
+    const undoStack = [];
+
+    // Живой GPS
+    let gpsWatchId = null;
+    let gpsUserMarker = null;
 
     let selectedItems = {};
 
     const chunksRegistry = new Map();
     const buildingsRegistry = new Map();
     const pinsRegistry = new Map();
+    const customLinesRegistry = new Map();
     const processedOsmWays = new Set();
 
     let isLoadingOverpass = false;
     let toastTimer = null;
 
     // ==========================================
-    // КАРТА И СЛОИ (СХЕМА + СПУТНИК)
+    // ИНИЦИАЛИЗАЦИЯ КАРТЫ
     // ==========================================
     const canvasRenderer = L.canvas({ tolerance: 12 });
 
@@ -389,6 +451,7 @@
 
     const streetsLayerGroup = L.layerGroup().addTo(map);
     const buildingsLayerGroup = L.layerGroup().addTo(map);
+    const customLinesLayerGroup = L.layerGroup().addTo(map);
     const pinsLayerGroup = L.layerGroup().addTo(map);
 
     function toggleSatellite() {
@@ -401,21 +464,64 @@
         satelliteTileLayer.addTo(map);
         btn.className = 'bg-indigo-600 border border-indigo-600 text-white font-semibold text-xs px-2.5 py-2 rounded-xl active:scale-95 transition shrink-0 flex items-center gap-1 shadow-sm';
         txt.textContent = 'Схема';
-        showToast('🛰️ Включен спутниковый снимок');
+        showToast('🛰️ Включен спутниковый снимок', false);
       } else {
         map.removeLayer(satelliteTileLayer);
         osmTileLayer.addTo(map);
         btn.className = 'bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-xs px-2.5 py-2 rounded-xl active:scale-95 transition shrink-0 flex items-center gap-1';
         txt.textContent = 'Спутник';
-        showToast('🗺️ Включена карта-схема');
+        showToast('🗺️ Включена карта-схема', false);
       }
-      // Перерисовываем невыделенные улицы контрастнее на спутнике
       chunksRegistry.forEach(ch => ch.layer.setStyle(getStreetChunkStyle(ch.id)));
       buildingsRegistry.forEach(b => b.layer.setStyle(getBuildingStyle(b.id)));
     }
 
     // ==========================================
-    // ГЕОМЕТРИЯ: РАЗБИЕНИЕ УЛИЦ НА МЕЛКИЕ УЧАСТКИ (~30 МЕТРОВ)
+    // ИСТОРИЯ ДЕЙСТВИЙ (UNDO / ОТМЕНА)
+    // ==========================================
+    function pushUndoSnapshot() {
+      undoStack.push(JSON.stringify(selectedItems));
+      if (undoStack.length > 15) undoStack.shift();
+      document.getElementById('undoBtn').classList.remove('hidden');
+    }
+
+    function undoLastAction() {
+      if (undoStack.length === 0) return;
+      const prevJson = undoStack.pop();
+      if (undoStack.length === 0) {
+        document.getElementById('undoBtn').classList.add('hidden');
+      }
+
+      const prevItems = JSON.parse(prevJson);
+      const currentIds = Object.keys(selectedItems);
+      selectedItems = prevItems;
+
+      // Обновляем все слои
+      const allAffectedIds = new Set([...currentIds, ...Object.keys(selectedItems)]);
+      allAffectedIds.forEach(idStr => {
+        if (chunksRegistry.has(idStr)) {
+          chunksRegistry.get(idStr).layer.setStyle(getStreetChunkStyle(idStr));
+        }
+        if (buildingsRegistry.has(idStr)) {
+          buildingsRegistry.get(idStr).layer.setStyle(getBuildingStyle(idStr));
+        }
+        if (pinsRegistry.has(idStr) && !selectedItems[idStr]) {
+          pinsLayerGroup.removeLayer(pinsRegistry.get(idStr).layer);
+          pinsRegistry.delete(idStr);
+        }
+        if (customLinesRegistry.has(idStr) && !selectedItems[idStr]) {
+          customLinesLayerGroup.removeLayer(customLinesRegistry.get(idStr).layer);
+          customLinesRegistry.delete(idStr);
+        }
+      });
+
+      renderSavedItemsImmediately();
+      saveToStorage();
+      showToast('↩️ Последнее действие отменено', false);
+    }
+
+    // ==========================================
+    // РАЗБИЕНИЕ УЛИЦ НА МЕЛКИЕ УЧАСТКИ (~30 МЕТРОВ)
     // ==========================================
     function distanceMeters(p1, p2) {
       const R = 6371000;
@@ -472,7 +578,7 @@
     }
 
     // ==========================================
-    // ОТРИСОВКА УЛИЦ, ДОМОВ И ТОЧЕК
+    // ОТРИСОВКА УЛИЦ, ДОМОВ, ТОЧЕК И СВОИХ ЛИНИЙ
     // ==========================================
     function getStreetChunkStyle(chunkId) {
       const sel = selectedItems[chunkId];
@@ -530,6 +636,10 @@
           createPinHouse([e.latlng.lat, e.latlng.lng]);
           return;
         }
+        if (selectionMode === 'draw_line') {
+          handleDrawLineTap([e.latlng.lat, e.latlng.lng]);
+          return;
+        }
         handleStreetChunkClick(idStr);
       });
 
@@ -564,6 +674,10 @@
 
       polygon.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        if (selectionMode === 'draw_line') {
+          handleDrawLineTap([e.latlng.lat, e.latlng.lng]);
+          return;
+        }
         handleBuildingClick(idStr);
       });
 
@@ -594,6 +708,7 @@
 
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
+        pushUndoSnapshot();
         delete selectedItems[idStr];
         pinsLayerGroup.removeLayer(marker);
         pinsRegistry.delete(idStr);
@@ -610,12 +725,48 @@
       });
     }
 
+    function renderCustomLineOnMap(lineId, name, coords, color) {
+      const idStr = String(lineId);
+      if (customLinesRegistry.has(idStr)) {
+        customLinesRegistry.get(idStr).layer.setStyle({ color: color || activeColor });
+        return;
+      }
+
+      const line = L.polyline(coords, {
+        color: color || activeColor,
+        weight: 8,
+        opacity: 0.95,
+        dashArray: '1, 0',
+        lineCap: 'round'
+      });
+
+      line.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        pushUndoSnapshot();
+        delete selectedItems[idStr];
+        customLinesLayerGroup.removeLayer(line);
+        customLinesRegistry.delete(idStr);
+        saveToStorage();
+        showToast(`Удалена линия: ${name}`, false);
+      });
+
+      line.addTo(customLinesLayerGroup);
+      customLinesRegistry.set(idStr, {
+        id: idStr,
+        name: name,
+        coords: coords,
+        layer: line
+      });
+    }
+
     // ==========================================
-    // ОБРАБОТЧИКИ НАЖАТИЙ (УЛИЦЫ, ДОМА, ТОЧКИ)
+    // ОБРАБОТЧИКИ НАЖАТИЙ (УЛИЦЫ, ДОМА, СВОИ ЛИНИИ)
     // ==========================================
     function handleStreetChunkClick(clickedChunkId) {
       const clickedChunk = chunksRegistry.get(clickedChunkId);
       if (!clickedChunk) return;
+
+      pushUndoSnapshot();
 
       const isAlreadySelected = Boolean(selectedItems[clickedChunkId]);
       const streetName = clickedChunk.name;
@@ -654,6 +805,7 @@
             kind: 'street_chunk',
             name: ch.name,
             note: '',
+            entrances: [],
             settlement: currentSettlementName,
             color: activeColor,
             coords: ch.coords,
@@ -672,6 +824,8 @@
       const bld = buildingsRegistry.get(bldId);
       if (!bld) return;
 
+      pushUndoSnapshot();
+
       if (selectedItems[bldId]) {
         delete selectedItems[bldId];
         bld.layer.setStyle(getBuildingStyle(bldId));
@@ -684,6 +838,7 @@
           kind: 'building',
           name: bld.name,
           note: '',
+          entrances: [],
           settlement: currentSettlementName,
           color: activeColor,
           coords: bld.coords,
@@ -697,6 +852,7 @@
     }
 
     function createPinHouse(latlng) {
+      pushUndoSnapshot();
       const idStr = `pin_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       const coordRounded = [Number(latlng[0].toFixed(6)), Number(latlng[1].toFixed(6))];
       const name = `🏠 Дом (точка)`;
@@ -706,6 +862,7 @@
         kind: 'pin_house',
         name: name,
         note: '',
+        entrances: [],
         settlement: currentSettlementName,
         color: activeColor,
         coords: coordRounded,
@@ -718,15 +875,89 @@
       showToast(`📌 Отмечен дом`, true);
     }
 
+    function handleDrawLineTap(latlng) {
+      const pt = [Number(latlng[0].toFixed(6)), Number(latlng[1].toFixed(6))];
+      if (!drawStartLatLng) {
+        drawStartLatLng = pt;
+        drawStartPreviewMarker = L.circleMarker(pt, {
+          radius: 6,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: activeColor,
+          fillOpacity: 1
+        }).addTo(map);
+        showToast('✏️ Теперь нажмите на вторую точку (конец участка)', false);
+      } else {
+        pushUndoSnapshot();
+        const startPt = drawStartLatLng;
+        drawStartLatLng = null;
+        if (drawStartPreviewMarker) {
+          map.removeLayer(drawStartPreviewMarker);
+          drawStartPreviewMarker = null;
+        }
+
+        const idStr = `customline_${Date.now()}`;
+        const coords = [startPt, pt];
+        const name = '✏️ Свой участок улицы';
+
+        selectedItems[idStr] = {
+          id: idStr,
+          kind: 'custom_line',
+          name: name,
+          note: '',
+          entrances: [],
+          settlement: currentSettlementName,
+          color: activeColor,
+          coords: coords,
+          timestamp: Date.now()
+        };
+
+        lastInteractedIds = [idStr];
+        renderCustomLineOnMap(idStr, name, coords, activeColor);
+        saveToStorage();
+        showToast('✅ Свой участок добавлен', true);
+      }
+    }
+
     map.on('click', (e) => {
       if (selectionMode === 'pin_house') {
         createPinHouse([e.latlng.lat, e.latlng.lng]);
+      } else if (selectionMode === 'draw_line') {
+        handleDrawLineTap([e.latlng.lat, e.latlng.lng]);
       }
     });
 
     // ==========================================
-    // РЕДАКТОР ЗАМЕТКИ / НОМЕРА ДОМА
+    // КАРТОЧКА ОБЪЕКТА: ПОДЪЕЗДЫ 1-8, ТЕГИ И ЗАМЕТКИ
     // ==========================================
+    function renderEntrancesButtons() {
+      const box = document.getElementById('entrancesContainer');
+      box.innerHTML = [1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+        const active = selectedEntrancesTemp.includes(num);
+        return `
+          <button type="button" onclick="toggleEntranceNum(${num})" class="py-1.5 rounded-lg text-xs font-bold border transition ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-100 text-slate-700 border-slate-200'}">
+            ${num}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function toggleEntranceNum(num) {
+      if (selectedEntrancesTemp.includes(num)) {
+        selectedEntrancesTemp = selectedEntrancesTemp.filter(x => x !== num);
+      } else {
+        selectedEntrancesTemp.push(num);
+        selectedEntrancesTemp.sort((a, b) => a - b);
+      }
+      renderEntrancesButtons();
+    }
+
+    function appendQuickTag(tagText) {
+      const input = document.getElementById('noteTextInput');
+      const current = input.value.trim();
+      input.value = current ? `${current}, ${tagText}` : tagText;
+    }
+
     function openNoteEditorForLast() {
       if (!lastInteractedIds.length) return;
       const firstItem = selectedItems[lastInteractedIds[0]];
@@ -734,23 +965,26 @@
 
       document.getElementById('noteNameInput').value = firstItem.name || '';
       document.getElementById('noteTextInput').value = firstItem.note || '';
+      selectedEntrancesTemp = Array.isArray(firstItem.entrances) ? [...firstItem.entrances] : [];
+      renderEntrancesButtons();
       toggleModal('noteModal', true);
     }
 
     function saveNoteForLast() {
       const newName = document.getElementById('noteNameInput').value.trim();
-      const newNote = document.getElementById('noteTextInput').value.trim();
+      let newNote = document.getElementById('noteTextInput').value.trim();
 
       lastInteractedIds.forEach(id => {
         if (selectedItems[id]) {
           if (newName) selectedItems[id].name = newName;
           selectedItems[id].note = newNote;
+          selectedItems[id].entrances = [...selectedEntrancesTemp];
         }
       });
 
       saveToStorage();
       toggleModal('noteModal', false);
-      showToast('✅ Заметка сохранена', false);
+      showToast('✅ Детали сохранены', false);
     }
 
     // ==========================================
@@ -916,6 +1150,8 @@
           createOrUpdateBuilding(item.id, item.name || '🏠 Дом', item.coords);
         } else if (item.kind === 'pin_house' || String(item.id).startsWith('pin_')) {
           renderPinHouseOnMap(item.id, item.name || '🏠 Дом', item.coords, item.color);
+        } else if (item.kind === 'custom_line' || String(item.id).startsWith('customline_')) {
+          renderCustomLineOnMap(item.id, item.name || '✏️ Свой участок', item.coords, item.color);
         } else {
           createOrUpdateStreetChunk(item.id, item.parentWayId || item.id, item.name || 'Участок улицы', item.coords);
         }
@@ -927,7 +1163,14 @@
     // ==========================================
     function setSelectionMode(mode) {
       selectionMode = mode;
-      const modes = ['micro', 'segment', 'street', 'pin_house'];
+      // Сбрасываем незавершенную точку рисования линии, если была
+      drawStartLatLng = null;
+      if (drawStartPreviewMarker) {
+        map.removeLayer(drawStartPreviewMarker);
+        drawStartPreviewMarker = null;
+      }
+
+      const modes = ['micro', 'segment', 'street', 'pin_house', 'draw_line'];
       modes.forEach(m => {
         const btn = document.getElementById('mode_' + m);
         if (m === mode) {
@@ -941,7 +1184,8 @@
         micro: '📏 Режим: мелкий участок улицы (~30м) + дома',
         segment: '🛣️ Режим: квартал целиком + дома',
         street: '🏙️ Режим: вся улица целиком + дома',
-        pin_house: '📌 Нажмите в любое место карты, чтобы отметить дом-точку'
+        pin_house: '📌 Нажмите в любое место карты, чтобы отметить дом-точку',
+        draw_line: '✏️ Нажмите на начало и конец проулка, чтобы нарисовать свою линию'
       };
       showToast(messages[mode], false);
     }
@@ -964,6 +1208,7 @@
 
     function setColor(hex, label) {
       activeColor = hex;
+      document.getElementById('colorLegendLabel').textContent = `Цвет: ${label}`;
       document.querySelectorAll('.color-btn').forEach(btn => {
         if (btn.getAttribute('data-color') === hex) {
           btn.classList.add('ring-2', 'ring-offset-2', 'ring-slate-800', 'scale-110');
@@ -971,7 +1216,6 @@
           btn.classList.remove('ring-2', 'ring-offset-2', 'ring-slate-800', 'scale-110');
         }
       });
-      showToast(`Цвет маркера: ${label}`, false);
     }
 
     function updateCounterUI() {
@@ -1006,7 +1250,7 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => {
         container.classList.add('hidden');
-      }, showNoteButton ? 4500 : 2400);
+      }, showNoteButton ? 5000 : 2500);
     }
 
     function toggleModal(id, show) {
@@ -1017,16 +1261,17 @@
 
     function manualSave() {
       saveToStorage();
-      showToast('✅ Все данные сохранены в память!', false);
+      showToast('✅ Все данные сохранены в память устройства!', false);
     }
 
     // ==========================================
-    // СПИСОК ВЫДЕЛЕННЫХ УЛИЦ И ДОМОВ + ФИЛЬТР ПО ЦВЕТАМ
+    // СПИСОК ВЫДЕЛЕННЫХ УЛИЦ И ДОМОВ + ПОИСК И ФИЛЬТР
     // ==========================================
     function getGroupedSelectedItems() {
       const groups = new Map();
       Object.values(selectedItems).forEach(item => {
         const isHouse = item.kind === 'building' || item.kind === 'pin_house' || String(item.id).startsWith('bld_') || String(item.id).startsWith('pin_');
+        const entrancesStr = Array.isArray(item.entrances) && item.entrances.length ? `п.${item.entrances.join(',')}` : '';
         const key = isHouse
           ? `house_${item.id}`
           : (item.name === 'Участок без названия' ? `unnamed_${item.id}` : `${item.settlement || 'ПМР'}__${item.name}__${item.color}__${item.note || ''}`);
@@ -1039,6 +1284,7 @@
             isHouse,
             name: item.name || 'Объект',
             note: item.note || '',
+            entrancesStr,
             settlement: item.settlement || 'ПМР',
             color: item.color || activeColor,
             ids: [item.id],
@@ -1053,15 +1299,21 @@
 
     function setColorFilter(color) {
       activeColorFilter = color;
-      openStreetsListModal();
+      renderStreetsListContent();
     }
 
     function openStreetsListModal() {
+      document.getElementById('listFilterInput').value = '';
+      renderStreetsListContent();
+      toggleModal('listModal', true);
+    }
+
+    function renderStreetsListContent() {
       const container = document.getElementById('selectedListContainer');
       const filterBar = document.getElementById('colorFilterBar');
+      const query = (document.getElementById('listFilterInput').value || '').trim().toLowerCase();
       const allGroups = getGroupedSelectedItems();
 
-      // Считаем статистику по цветам
       const countsByColor = {};
       allGroups.forEach(g => {
         countsByColor[g.color] = (countsByColor[g.color] || 0) + 1;
@@ -1082,22 +1334,28 @@
         </button>
       `).join('');
 
-      const filtered = activeColorFilter === 'ALL'
-        ? allGroups
-        : allGroups.filter(g => g.color === activeColorFilter);
+      const filtered = allGroups.filter(g => {
+        const matchColor = activeColorFilter === 'ALL' || g.color === activeColorFilter;
+        const matchQuery = !query ||
+          g.name.toLowerCase().includes(query) ||
+          g.settlement.toLowerCase().includes(query) ||
+          g.note.toLowerCase().includes(query);
+        return matchColor && matchQuery;
+      });
 
       if (filtered.length === 0) {
-        container.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm">В этой категории пока нет выделенных объектов.</div>`;
+        container.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm">Ничего не найдено.</div>`;
       } else {
         container.innerHTML = filtered.map((g) => {
           const origIdx = allGroups.findIndex(x => x.key === g.key);
+          const metaBadges = [g.entrancesStr, g.note].filter(Boolean).join(' • ');
           return `
             <div class="flex items-center justify-between bg-slate-50 hover:bg-slate-100 p-3 rounded-xl border border-slate-200/80 transition">
               <div onclick="focusOnGroup(${origIdx})" class="flex items-center gap-3 flex-1 cursor-pointer min-w-0">
                 <span class="w-4 h-4 rounded-full shrink-0" style="background:${g.color}"></span>
                 <div class="truncate">
                   <div class="font-semibold text-slate-800 text-xs sm:text-sm truncate">${g.name}</div>
-                  ${g.note ? `<div class="text-xs text-blue-600 font-medium truncate">💬 ${g.note}</div>` : ''}
+                  ${metaBadges ? `<div class="text-xs text-blue-600 font-medium truncate">💬 ${metaBadges}</div>` : ''}
                   <div class="text-[11px] text-slate-400">${g.settlement}${g.isHouse ? ' • Дом' : ` • участков (30м): ${g.ids.length}`}</div>
                 </div>
               </div>
@@ -1109,7 +1367,6 @@
           `;
         }).join('');
       }
-      toggleModal('listModal', true);
     }
 
     function editGroupNote(groupIdx) {
@@ -1135,6 +1392,7 @@
       const g = groups[groupIdx];
       if (!g) return;
 
+      pushUndoSnapshot();
       g.ids.forEach(id => {
         const idStr = String(id);
         delete selectedItems[idStr];
@@ -1148,15 +1406,20 @@
           pinsLayerGroup.removeLayer(pinsRegistry.get(idStr).layer);
           pinsRegistry.delete(idStr);
         }
+        if (customLinesRegistry.has(idStr)) {
+          customLinesLayerGroup.removeLayer(customLinesRegistry.get(idStr).layer);
+          customLinesRegistry.delete(idStr);
+        }
       });
 
       saveToStorage();
-      openStreetsListModal();
+      renderStreetsListContent();
       showToast(`Снято: ${g.name}`, false);
     }
 
     function clearAllSelected() {
       if (Object.keys(selectedItems).length === 0) return;
+      pushUndoSnapshot();
       const allIds = Object.keys(selectedItems);
       selectedItems = {};
 
@@ -1171,10 +1434,14 @@
           pinsLayerGroup.removeLayer(pinsRegistry.get(idStr).layer);
           pinsRegistry.delete(idStr);
         }
+        if (customLinesRegistry.has(idStr)) {
+          customLinesLayerGroup.removeLayer(customLinesRegistry.get(idStr).layer);
+          customLinesRegistry.delete(idStr);
+        }
       });
 
       saveToStorage();
-      openStreetsListModal();
+      renderStreetsListContent();
       showToast('Все выделения очищены', false);
     }
 
@@ -1186,11 +1453,12 @@
       }
       const lines = groups.map((g, i) => {
         const suffix = g.isHouse ? '' : ` [уч.: ${g.ids.length}]`;
-        const noteStr = g.note ? ` (${g.note})` : '';
-        return `${i + 1}. ${g.settlement} — ${g.name}${suffix}${noteStr}`;
+        const extra = [g.entrancesStr, g.note].filter(Boolean).join(', ');
+        const extraStr = extra ? ` (${extra})` : '';
+        return `${i + 1}. ${g.settlement} — ${g.name}${suffix}${extraStr}`;
       });
-      const text = `Выделенные объекты (${groups.length}):\n` + lines.join('\n');
-      copyTextToClipboard(text, '📋 Список скопирован в буфер обмена!');
+      const text = `Отчёт по карте ПМР (${groups.length}):\n` + lines.join('\n');
+      copyTextToClipboard(text, '📋 Отчёт скопирован в буфер обмена!');
     }
 
     // ==========================================
@@ -1198,7 +1466,7 @@
     // ==========================================
     function openDataModal() {
       const exportPayload = {
-        app: 'pmr-streets-buildings-tracker-v3',
+        app: 'pmr-streets-buildings-tracker-v4',
         exportedAt: new Date().toISOString(),
         data: selectedItems
       };
@@ -1208,7 +1476,7 @@
 
     function exportJSONFile() {
       const exportPayload = {
-        app: 'pmr-streets-buildings-tracker-v3',
+        app: 'pmr-streets-buildings-tracker-v4',
         exportedAt: new Date().toISOString(),
         data: selectedItems
       };
@@ -1228,7 +1496,7 @@
 
     function copyExportCode() {
       const exportPayload = {
-        app: 'pmr-streets-buildings-tracker-v3',
+        app: 'pmr-streets-buildings-tracker-v4',
         exportedAt: new Date().toISOString(),
         data: selectedItems
       };
@@ -1265,7 +1533,28 @@
           throw new Error('Неверный формат');
         }
 
-        selectedItems = { ...selectedItems, ...incomingData };
+        pushUndoSnapshot();
+        const importMode = document.getElementById('importModeSelect').value;
+
+        if (importMode === 'replace') {
+          // Сначала сбрасываем старые стили
+          Object.keys(selectedItems).forEach(idStr => {
+            if (chunksRegistry.has(idStr)) chunksRegistry.get(idStr).layer.setStyle(getStreetChunkStyle(idStr));
+            if (buildingsRegistry.has(idStr)) buildingsRegistry.get(idStr).layer.setStyle(getBuildingStyle(idStr));
+            if (pinsRegistry.has(idStr)) {
+              pinsLayerGroup.removeLayer(pinsRegistry.get(idStr).layer);
+              pinsRegistry.delete(idStr);
+            }
+            if (customLinesRegistry.has(idStr)) {
+              customLinesLayerGroup.removeLayer(customLinesRegistry.get(idStr).layer);
+              customLinesRegistry.delete(idStr);
+            }
+          });
+          selectedItems = { ...incomingData };
+        } else {
+          selectedItems = { ...selectedItems, ...incomingData };
+        }
+
         saveToStorage();
         renderSavedItemsImmediately();
 
@@ -1276,9 +1565,9 @@
         }
 
         toggleModal('dataModal', false);
-        showToast('✅ Улицы и дома успешно импортированы!', false);
+        showToast('✅ Данные успешно импортированы!', false);
       } catch (err) {
-        showToast('❌ Ошибка: неверный формат данных', false);
+        showToast('❌ Ошибка: неверный формат JSON', false);
       }
     }
 
@@ -1301,7 +1590,7 @@
     }
 
     // ==========================================
-    // ПОИСК И ГЕОЛОКАЦИЯ
+    // ПОИСК И ЖИВАЯ ГЕОЛОКАЦИЯ (GPS-РАДАР)
     // ==========================================
     async function searchPlace() {
       const q = document.getElementById('searchInput').value.trim();
@@ -1336,25 +1625,59 @@
       map.flyTo([lat, lon], 17, { duration: 0.8 });
     }
 
-    function locateUser() {
+    function toggleLiveGPS() {
       if (!navigator.geolocation) {
         showToast('Геолокация не поддерживается', false);
         return;
       }
-      showToast('Определение координат...', false);
-      navigator.geolocation.getCurrentPosition(
+
+      const gpsBtn = document.getElementById('gpsBtn');
+
+      if (gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+        if (gpsUserMarker) {
+          map.removeLayer(gpsUserMarker);
+          gpsUserMarker = null;
+        }
+        gpsBtn.className = 'bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-blue-600 active:scale-90 transition mt-1';
+        showToast('GPS-слежение выключено', false);
+        return;
+      }
+
+      showToast('🛰️ Поиск спутников GPS...', false);
+      gpsBtn.className = 'bg-blue-600 shadow-md border border-blue-600 w-10 h-10 rounded-xl flex items-center justify-center text-white active:scale-90 transition mt-1 animate-pulse';
+
+      let firstFix = true;
+      gpsWatchId = navigator.geolocation.watchPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords;
-          map.flyTo([latitude, longitude], 17, { duration: 0.8 });
-          L.circleMarker([latitude, longitude], {
-            radius: 6,
-            color: '#ffffff',
-            weight: 2,
-            fillColor: '#2563eb',
-            fillOpacity: 1
-          }).addTo(map);
+          const latlng = [latitude, longitude];
+
+          if (!gpsUserMarker) {
+            gpsUserMarker = L.circleMarker(latlng, {
+              radius: 7,
+              color: '#ffffff',
+              weight: 2.5,
+              fillColor: '#2563eb',
+              fillOpacity: 1
+            }).addTo(map);
+          } else {
+            gpsUserMarker.setLatLng(latlng);
+          }
+
+          if (firstFix) {
+            firstFix = false;
+            map.flyTo(latlng, 18, { duration: 0.8 });
+            showToast('📍 Живой GPS включен', false);
+          }
         },
-        () => showToast('Нет доступа к геопозиции', false)
+        () => {
+          showToast('Нет доступа к GPS', false);
+          gpsWatchId = null;
+          gpsBtn.className = 'bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-blue-600 active:scale-90 transition mt-1';
+        },
+        { enableHighAccuracy: true, maximumAge: 3000 }
       );
     }
 
