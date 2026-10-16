@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>Карта ПМР — Улицы и Дома v4.0</title>
+  <title>Карта ПМР — Улицы и Дома v5.0 (360°)</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -14,8 +14,13 @@
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Плагин вращения карты Leaflet-Rotate -->
+  <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js"></script>
 
   <style>
+    :root {
+      --house-counter-rotate: 0deg;
+    }
     * {
       -webkit-tap-highlight-color: transparent;
       user-select: none;
@@ -28,20 +33,24 @@
       overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: #0f172a;
+      touch-action: none;
     }
     #map {
       height: 100%;
       width: 100%;
       z-index: 1;
+      touch-action: none;
     }
-    .leaflet-control-zoom {
-      display: none;
+    .leaflet-control-zoom,
+    .leaflet-control-rotate {
+      display: none !important;
     }
     .leaflet-control-attribution {
       font-size: 9px !important;
       background: rgba(255,255,255,0.6) !important;
       backdrop-filter: blur(4px);
     }
+    /* Номера домов всегда остаются ровными при повороте карты */
     .house-label {
       background: transparent !important;
       border: none !important;
@@ -52,6 +61,11 @@
       text-shadow: 0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 4px #ffffff;
       padding: 0 !important;
       pointer-events: none;
+    }
+    .house-label span {
+      display: inline-block;
+      transform: rotate(var(--house-counter-rotate));
+      transition: transform 0.08s linear;
     }
     .house-label::before {
       display: none !important;
@@ -159,14 +173,14 @@
       </button>
     </div>
 
-    <!-- Статус-бар и панель быстрой заметки к выбранному объекту -->
+    <!-- Статус-бар и панель быстрой заметки -->
     <div class="flex items-center justify-between gap-2">
       <div id="statusBadge" class="bg-slate-900/80 backdrop-blur-md text-white text-[11px] px-3 py-1.5 rounded-full shadow pointer-events-auto flex items-center gap-2">
         <span id="statusDot" class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
         <span id="statusText" class="truncate">Загрузка карты...</span>
       </div>
 
-      <!-- Плашка уведомления + кнопка "Заметка / Подъезды" -->
+      <!-- Плашка уведомления + кнопка "Детали" -->
       <div id="toastContainer" class="hidden pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-lg flex items-center gap-2 max-w-[68%]">
         <span id="toastText" class="truncate"></span>
         <button id="editNoteBtn" onclick="openNoteEditorForLast()" class="hidden bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
@@ -174,17 +188,58 @@
         </button>
       </div>
     </div>
+
+    <!-- ВСПЛЫВАЮЩАЯ ПАНЕЛЬ ТОЧНОГО ВРАЩЕНИЯ КАРТЫ (открывается по нажатию на Компас) -->
+    <div id="rotationPanel" class="hidden pointer-events-auto bg-white/95 backdrop-blur-md shadow-xl rounded-2xl p-2.5 border border-slate-200/80 flex flex-col gap-2">
+      <div class="flex items-center justify-between text-xs">
+        <span class="font-bold text-slate-700 flex items-center gap-1">
+          🧭 Поворот карты: <b id="bearingValueLabel" class="text-blue-600">0°</b>
+        </span>
+        <div class="flex items-center gap-1.5">
+          <button id="deviceCompassBtn" onclick="toggleDeviceCompass()" class="bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-[11px] px-2.5 py-1 rounded-lg active:scale-95 transition">
+            📱 Авто-компас
+          </button>
+          <button onclick="resetNorth()" class="bg-blue-50 text-blue-600 border border-blue-200 font-semibold text-[11px] px-2.5 py-1 rounded-lg active:scale-95 transition">
+            На Север (0°)
+          </button>
+          <button onclick="toggleRotationPanel(false)" class="text-slate-400 hover:text-slate-600 px-1 font-bold">✕</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="rotateByStep(-30)" class="bg-slate-100 active:bg-slate-200 text-slate-700 font-bold text-xs px-2.5 py-1.5 rounded-lg shrink-0">↺ -30°</button>
+        <input id="bearingSlider" type="range" min="0" max="360" value="0" oninput="setMapBearing(Number(this.value))" class="w-full accent-blue-600 h-2 bg-slate-200 rounded-lg cursor-pointer" />
+        <button onclick="rotateByStep(30)" class="bg-slate-100 active:bg-slate-200 text-slate-700 font-bold text-xs px-2.5 py-1.5 rounded-lg shrink-0">↻ +30°</button>
+      </div>
+    </div>
   </div>
 
-  <!-- ЛЕВАЯ КНОПКА ОТМЕНЫ ПОСЛЕДНЕГО ДЕЙСТВИЯ (UNDO) -->
+  <!-- ЛЕВЫЕ БОКОВЫЕ КНОПКИ: ОТМЕНА (UNDO) + ПОВОРОТ ОДНОЙ РУКОЙ -->
   <div class="fixed left-2.5 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 pointer-events-auto">
     <button id="undoBtn" onclick="undoLastAction()" title="Отменить последнее действие" class="hidden bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-base">
       ↩️
     </button>
+    <button onclick="rotateByStep(-30)" title="Повернуть влево на 30°" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-base">
+      ↺
+    </button>
+    <button onclick="rotateByStep(30)" title="Повернуть вправо на 30°" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-base">
+      ↻
+    </button>
   </div>
 
-  <!-- ПРАВЫЕ БОКОВЫЕ КНОПКИ ЗУМА И ЖИВОЙ ГЕОЛОКАЦИИ -->
+  <!-- ПРАВЫЕ БОКОВЫЕ КНОПКИ: КОМПАС, ЗУМ И ЖИВОЙ GPS -->
   <div class="fixed right-2.5 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 pointer-events-auto">
+    <!-- Кнопка Компаса (показывает направление Севера и угол) -->
+    <button id="compassBtn" onclick="handleCompassButtonClick()" title="Компас и настройка вращения" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-12 rounded-xl flex flex-col items-center justify-center text-slate-700 active:scale-90 transition relative">
+      <svg id="compassNeedle" class="w-5 h-5 transition-transform duration-75" viewBox="0 0 24 24" fill="none">
+        <!-- Красная стрелка на Север -->
+        <polygon points="12,2 16,12 8,12" fill="#ef4444" />
+        <!-- Серая стрелка на Юг -->
+        <polygon points="12,22 16,12 8,12" fill="#64748b" />
+        <circle cx="12" cy="12" r="2" fill="#ffffff" stroke="#0f172a" stroke-width="1.5"/>
+      </svg>
+      <span id="compassDegreeBadge" class="text-[9px] font-extrabold text-slate-600 leading-none mt-0.5">0°</span>
+    </button>
+
     <button onclick="map.zoomIn()" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-lg">+</button>
     <button onclick="map.zoomOut()" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 active:scale-90 transition font-bold text-lg">−</button>
     <button id="gpsBtn" onclick="toggleLiveGPS()" title="Живой GPS-трекер" class="bg-white/95 backdrop-blur shadow-md border border-slate-200 w-10 h-10 rounded-xl flex items-center justify-center text-blue-600 active:scale-90 transition mt-1">
@@ -262,9 +317,7 @@
         <!-- Отметка подъездов (для многоквартирных домов) -->
         <div>
           <label class="block text-[11px] font-semibold text-slate-500 mb-1">Отметить подъезды (если многоэтажка):</label>
-          <div id="entrancesContainer" class="grid grid-cols-8 gap-1">
-            <!-- Кнопки 1..8 генерируются JS -->
-          </div>
+          <div id="entrancesContainer" class="grid grid-cols-8 gap-1"></div>
         </div>
 
         <!-- Быстрые теги -->
@@ -302,17 +355,13 @@
         <button onclick="toggleModal('listModal', false)" class="p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">✕</button>
       </div>
 
-      <!-- Поиск внутри сохраненного списка -->
       <div class="px-3.5 pt-2 bg-slate-50">
         <input id="listFilterInput" type="text" oninput="renderStreetsListContent()" placeholder="🔍 Фильтр по улице, дому или заметке..." class="w-full bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 select-text" />
       </div>
 
-      <!-- Фильтр по цветам -->
-      <div id="colorFilterBar" class="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
-      </div>
+      <div id="colorFilterBar" class="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs"></div>
       
-      <div id="selectedListContainer" class="p-3.5 overflow-y-auto custom-scroll flex-1 space-y-2">
-      </div>
+      <div id="selectedListContainer" class="p-3.5 overflow-y-auto custom-scroll flex-1 space-y-2"></div>
 
       <div class="p-3 bg-slate-50 border-t border-slate-100 flex justify-between gap-2">
         <button onclick="copyReadableList()" class="flex-1 bg-blue-600 text-white text-xs font-semibold py-2.5 rounded-xl active:scale-95 transition">
@@ -349,7 +398,6 @@
           </div>
         </div>
 
-        <!-- Выбор режима импорта: Объединить или Заменить -->
         <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="font-semibold text-slate-800 text-xs">📥 Режим при импорте:</span>
@@ -402,6 +450,10 @@
     let lastInteractedIds = [];
     let selectedEntrancesTemp = [];
 
+    // Состояние вращения карты (0..360 градусов)
+    let currentBearing = 0;
+    let isDeviceCompassActive = false;
+
     // Для рисования собственной линии (проулка) 2 кликами
     let drawStartLatLng = null;
     let drawStartPreviewMarker = null;
@@ -425,16 +477,21 @@
     let toastTimer = null;
 
     // ==========================================
-    // ИНИЦИАЛИЗАЦИЯ КАРТЫ
+    // ИНИЦИАЛИЗАЦИЯ КАРТЫ С ПОДДЕРЖКОЙ ВРАЩЕНИЯ
     // ==========================================
-    const canvasRenderer = L.canvas({ tolerance: 12 });
+    // SVG-рендерер обеспечивает 100% точность нажатий по улицам и домам при любом угле поворота карты
+    const svgRenderer = L.svg({ padding: 0.65 });
 
     const map = L.map('map', {
       center: [46.8403, 29.6273],
       zoom: 17,
       maxZoom: 20,
-      renderer: canvasRenderer,
-      zoomControl: false
+      renderer: svgRenderer,
+      zoomControl: false,
+      rotate: true,
+      touchRotate: false, // Обрабатываем 2-пальцевый поворот собственным плавным контроллером без конфликта с зумом
+      rotateControl: false,
+      bearing: 0
     });
 
     const osmTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -453,6 +510,178 @@
     const buildingsLayerGroup = L.layerGroup().addTo(map);
     const customLinesLayerGroup = L.layerGroup().addTo(map);
     const pinsLayerGroup = L.layerGroup().addTo(map);
+
+    // ==========================================
+    // УПРАВЛЕНИЕ ВРАЩЕНИЕМ КАРТЫ И ЖЕСТАМИ 2 ПАЛЬЦЕВ
+    // ==========================================
+    function normalizeAngle(deg) {
+      return ((deg % 360) + 360) % 360;
+    }
+
+    function setMapBearing(deg) {
+      currentBearing = Math.round(normalizeAngle(deg));
+      if (typeof map.setBearing === 'function') {
+        map.setBearing(currentBearing);
+      }
+      updateCompassUI();
+    }
+
+    function updateCompassUI() {
+      const needle = document.getElementById('compassNeedle');
+      const badge = document.getElementById('compassDegreeBadge');
+      const label = document.getElementById('bearingValueLabel');
+      const slider = document.getElementById('bearingSlider');
+      const compassBtn = document.getElementById('compassBtn');
+
+      if (needle) needle.style.transform = `rotate(${currentBearing}deg)`;
+      if (badge) badge.textContent = `${currentBearing}°`;
+      if (label) label.textContent = `${currentBearing}°`;
+      if (slider) slider.value = currentBearing;
+
+      // Компенсируем угол наклона для номеров домов, чтобы текст всегда читался ровно
+      document.documentElement.style.setProperty('--house-counter-rotate', `${-currentBearing}deg`);
+
+      if (currentBearing !== 0) {
+        compassBtn.classList.add('ring-2', 'ring-blue-500');
+      } else {
+        compassBtn.classList.remove('ring-2', 'ring-blue-500');
+      }
+    }
+
+    function rotateByStep(deltaDeg) {
+      if (isDeviceCompassActive) toggleDeviceCompass(false);
+      setMapBearing(currentBearing + deltaDeg);
+    }
+
+    function resetNorth() {
+      if (isDeviceCompassActive) toggleDeviceCompass(false);
+      setMapBearing(0);
+      showToast('🧭 Карта выровнена на Север (0°)', false);
+    }
+
+    function toggleRotationPanel(forceState) {
+      const panel = document.getElementById('rotationPanel');
+      const isHidden = panel.classList.contains('hidden');
+      const show = typeof forceState === 'boolean' ? forceState : isHidden;
+      if (show) panel.classList.remove('hidden');
+      else panel.classList.add('hidden');
+    }
+
+    function handleCompassButtonClick() {
+      const panel = document.getElementById('rotationPanel');
+      if (panel.classList.contains('hidden')) {
+        toggleRotationPanel(true);
+      } else if (currentBearing !== 0) {
+        resetNorth();
+      } else {
+        toggleRotationPanel(false);
+      }
+    }
+
+    // Мультитач-вращение двумя пальцами на мобильных экранах
+    (function initMobileTwoFingerRotation() {
+      const mapEl = document.getElementById('map');
+      let isTouchingTwoFingers = false;
+      let isRotationLockedIn = false;
+      let initialTouchAngle = 0;
+      let initialBearing = 0;
+
+      function getAngleBetweenTouches(t1, t2) {
+        return Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * 180 / Math.PI;
+      }
+
+      function shortestAngleDiff(a1, a2) {
+        let diff = ((a2 - a1 + 180) % 360) - 180;
+        return diff < -180 ? diff + 360 : diff;
+      }
+
+      mapEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          isTouchingTwoFingers = true;
+          isRotationLockedIn = false;
+          initialTouchAngle = getAngleBetweenTouches(e.touches[0], e.touches[1]);
+          initialBearing = currentBearing;
+        }
+      }, { passive: true });
+
+      mapEl.addEventListener('touchmove', (e) => {
+        if (!isTouchingTwoFingers || e.touches.length !== 2) return;
+        const currentAngle = getAngleBetweenTouches(e.touches[0], e.touches[1]);
+        const delta = shortestAngleDiff(initialTouchAngle, currentAngle);
+
+        // Порог 3 градуса, чтобы обычный зум щипком не вызывал случайного дрожания угла
+        if (!isRotationLockedIn && Math.abs(delta) > 3) {
+          isRotationLockedIn = true;
+          initialTouchAngle = currentAngle;
+          initialBearing = currentBearing;
+          if (isDeviceCompassActive) toggleDeviceCompass(false);
+          return;
+        }
+
+        if (isRotationLockedIn) {
+          setMapBearing(initialBearing + delta);
+        }
+      }, { passive: true });
+
+      const endTouch = (e) => {
+        if (e.touches.length < 2) {
+          if (isRotationLockedIn) {
+            loadMapObjectsInView(false);
+          }
+          isTouchingTwoFingers = false;
+          isRotationLockedIn = false;
+        }
+      };
+
+      mapEl.addEventListener('touchend', endTouch, { passive: true });
+      mapEl.addEventListener('touchcancel', endTouch, { passive: true });
+    })();
+
+    // Автоповорот карты по датчику компаса смартфона
+    function handleDeviceOrientation(e) {
+      if (!isDeviceCompassActive) return;
+      let heading = null;
+      if (typeof e.webkitCompassHeading === 'number') {
+        heading = e.webkitCompassHeading; // iOS
+      } else if (typeof e.alpha === 'number') {
+        heading = 360 - e.alpha; // Android
+      }
+      if (heading !== null && !isNaN(heading)) {
+        setMapBearing(360 - heading);
+      }
+    }
+
+    async function toggleDeviceCompass(forceState) {
+      const btn = document.getElementById('deviceCompassBtn');
+      const nextState = typeof forceState === 'boolean' ? forceState : !isDeviceCompassActive;
+
+      if (!nextState) {
+        isDeviceCompassActive = false;
+        window.removeEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
+        window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
+        btn.className = 'bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-[11px] px-2.5 py-1 rounded-lg active:scale-95 transition';
+        return;
+      }
+
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const perm = await DeviceOrientationEvent.requestPermission();
+          if (perm !== 'granted') {
+            showToast('Нет доступа к датчику компаса', false);
+            return;
+          }
+        } catch (err) {
+          showToast('Компас недоступен в этом браузере', false);
+          return;
+        }
+      }
+
+      isDeviceCompassActive = true;
+      window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
+      window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+      btn.className = 'bg-blue-600 text-white border border-blue-600 font-semibold text-[11px] px-2.5 py-1 rounded-lg active:scale-95 transition shadow-sm';
+      showToast('📱 Авто-поворот по компасу включен', false);
+    }
 
     function toggleSatellite() {
       isSatellite = !isSatellite;
@@ -496,7 +725,6 @@
       const currentIds = Object.keys(selectedItems);
       selectedItems = prevItems;
 
-      // Обновляем все слои
       const allAffectedIds = new Set([...currentIds, ...Object.keys(selectedItems)]);
       allAffectedIds.forEach(idStr => {
         if (chunksRegistry.has(idStr)) {
@@ -585,7 +813,7 @@
       if (sel) {
         return {
           color: sel.color || activeColor,
-          weight: 8,
+          weight: 9,
           opacity: 0.95,
           lineCap: 'round',
           lineJoin: 'round'
@@ -593,8 +821,8 @@
       }
       return {
         color: isSatellite ? '#e2e8f0' : '#475569',
-        weight: 4,
-        opacity: isSatellite ? 0.55 : 0.35,
+        weight: 6,
+        opacity: isSatellite ? 0.55 : 0.38,
         lineCap: 'round',
         lineJoin: 'round'
       };
@@ -616,7 +844,7 @@
         fillColor: isSatellite ? '#f8fafc' : '#94a3b8',
         weight: 1.3,
         opacity: isSatellite ? 0.65 : 0.55,
-        fillOpacity: 0.2
+        fillOpacity: 0.22
       };
     }
 
@@ -665,7 +893,7 @@
 
       const polygon = L.polygon(coords, getBuildingStyle(idStr));
       if (houseNum) {
-        polygon.bindTooltip(String(houseNum), {
+        polygon.bindTooltip(`<span>${houseNum}</span>`, {
           permanent: true,
           direction: 'center',
           className: 'house-label'
@@ -736,7 +964,6 @@
         color: color || activeColor,
         weight: 8,
         opacity: 0.95,
-        dashArray: '1, 0',
         lineCap: 'round'
       });
 
@@ -1025,7 +1252,8 @@
       const fetchBuildings = showBuildingsLayer && zoom >= 16;
       setStatus(fetchBuildings ? 'Загрузка улиц и домов...' : 'Загрузка улиц (для домов приблизьте +)...', 'blue');
 
-      const b = map.getBounds();
+      // Расширяем область запроса на 15%, чтобы при вращении карты углы экрана всегда были заполнены
+      const b = map.getBounds().pad(0.15);
       const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
 
       const buildingQueryPart = fetchBuildings ? `way["building"](${bbox});` : '';
@@ -1076,7 +1304,7 @@
           }
 
           if (fetchBuildings) {
-            setStatus(`Готово: нажимайте на дома и участки улиц`, 'emerald');
+            setStatus(`Готово: выделяйте объекты или крутите карту 2 пальцами`, 'emerald');
           } else {
             setStatus(`Улицы загружены. Приблизьте (+), чтобы видеть дома`, 'emerald');
           }
@@ -1163,7 +1391,6 @@
     // ==========================================
     function setSelectionMode(mode) {
       selectionMode = mode;
-      // Сбрасываем незавершенную точку рисования линии, если была
       drawStartLatLng = null;
       if (drawStartPreviewMarker) {
         map.removeLayer(drawStartPreviewMarker);
@@ -1466,7 +1693,7 @@
     // ==========================================
     function openDataModal() {
       const exportPayload = {
-        app: 'pmr-streets-buildings-tracker-v4',
+        app: 'pmr-streets-buildings-tracker-v5',
         exportedAt: new Date().toISOString(),
         data: selectedItems
       };
@@ -1476,7 +1703,7 @@
 
     function exportJSONFile() {
       const exportPayload = {
-        app: 'pmr-streets-buildings-tracker-v4',
+        app: 'pmr-streets-buildings-tracker-v5',
         exportedAt: new Date().toISOString(),
         data: selectedItems
       };
@@ -1496,7 +1723,7 @@
 
     function copyExportCode() {
       const exportPayload = {
-        app: 'pmr-streets-buildings-tracker-v4',
+        app: 'pmr-streets-buildings-tracker-v5',
         exportedAt: new Date().toISOString(),
         data: selectedItems
       };
@@ -1537,7 +1764,6 @@
         const importMode = document.getElementById('importModeSelect').value;
 
         if (importMode === 'replace') {
-          // Сначала сбрасываем старые стили
           Object.keys(selectedItems).forEach(idStr => {
             if (chunksRegistry.has(idStr)) chunksRegistry.get(idStr).layer.setStyle(getStreetChunkStyle(idStr));
             if (buildingsRegistry.has(idStr)) buildingsRegistry.get(idStr).layer.setStyle(getBuildingStyle(idStr));
@@ -1651,7 +1877,7 @@
       let firstFix = true;
       gpsWatchId = navigator.geolocation.watchPosition(
         (pos) => {
-          const { latitude, longitude } = pos.coords;
+          const { latitude, longitude, heading } = pos.coords;
           const latlng = [latitude, longitude];
 
           if (!gpsUserMarker) {
@@ -1664,6 +1890,11 @@
             }).addTo(map);
           } else {
             gpsUserMarker.setLatLng(latlng);
+          }
+
+          // Если включен GPS и устройство передает курс движения при ходьбе
+          if (typeof heading === 'number' && !isNaN(heading) && heading > 0 && !isDeviceCompassActive) {
+            setMapBearing(360 - heading);
           }
 
           if (firstFix) {
